@@ -1,0 +1,69 @@
+# Job Monitor Configuration
+# Copy this to config.local.yaml and fill in your credentials
+
+# Gmail SMTP Settings
+email:
+  smtp_server: "smtp.gmail.com"
+  smtp_port: 587
+  sender_email: "your_email@gmail.com"      # Your Gmail address
+  sender_password: "your_app_password"      # Gmail App Password (not regular password)
+  recipient_email: "your_email@gmail.com"   # Where to send notifications (can be same)
+
+# Job Search Settings
+job_search:
+  location: "Abuja, Nigeria"
+  keywords:
+    - "developer"
+    - "software engineer"
+    - "frontend"
+    - "backend"
+    - "fullstack"
+    - "full stack"
+    - "python"
+    - "javascript"
+    - "react"
+    - "node"
+    - "java"
+    - "c#"
+    - ".net"
+    - "internship"
+    - "graduate"
+    - "entry level"
+    - "junior"
+    - "trainee"
+    - "devops"
+    - "data analyst"
+    - "data scientist"
+    - "mobile developer"
+    - "flutter"
+    - "kotlin"
+    - "swift"
+  exclude_keywords:
+    - "senior"
+    - "lead"
+    - "principal"
+    - "architect"
+    - "manager"
+    - "director"
+    - "vp"
+    - "head of"
+
+# Job Sites to Monitor (enabled/disabled)
+job_sites:
+  linkedin: true
+  indeed: true
+  jobberman: true
+  myjobmag: true
+  ngcareers: true
+  hotnigerianjobs: true
+
+# Monitoring Settings
+monitoring:
+  check_interval_minutes: 30
+  max_jobs_per_site: 20
+  days_back: 7  # Only show jobs posted within this many days
+
+# GitHub Actions Settings
+github_actions:
+  enabled: true
+  schedule: "*/30 * * * *"  # Every 30 minutes (cron expression)
