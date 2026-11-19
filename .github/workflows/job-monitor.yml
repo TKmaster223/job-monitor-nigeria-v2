@@ -24,7 +24,7 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
-          cache-key: "pip-v2-${{ runner.os }}-${{ hashFiles('requirements.txt') }}"
+          cache-dependency-path: '**/requirements.txt'
       
       - name: Install dependencies
         run: |
