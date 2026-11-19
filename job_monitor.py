@@ -51,6 +51,12 @@ class Job:
     posted_date: Optional[str] = None
     description: Optional[str] = None
     job_type: Optional[str] = None  # full-time, internship, contract, etc.
+    # Enhanced fields
+    requirements: Optional[List[str]] = None
+    key_skills: Optional[List[str]] = None
+    certifications: Optional[List[str]] = None
+    experience_level: Optional[str] = None
+    hiring_info: Optional[Dict[str, Any]] = None
     
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -101,7 +107,7 @@ class JobSiteScraper:
 
 
 class LinkedInScraper(JobSiteScraper):
-    """Scrape LinkedIn Jobs"""
+    """Scrape LinkedIn Jobs with detailed analysis"""
     
     def scrape(self) -> List[Job]:
         jobs = []
@@ -132,6 +138,8 @@ class LinkedInScraper(JobSiteScraper):
                     for card in job_cards[:self.config['monitoring']['max_jobs_per_site']]:
                         job = self._parse_job_card(card)
                         if job:
+                            # Fetch detailed job info
+                            self._enrich_job_details(job)
                             jobs.append(job)
                             
                 except Exception as e:
@@ -155,6 +163,7 @@ class LinkedInScraper(JobSiteScraper):
                 for card in job_cards[:self.config['monitoring']['max_jobs_per_site']]:
                     job = self._parse_job_card(card)
                     if job:
+                        self._enrich_job_details(job)
                         jobs.append(job)
                         
             except Exception as e:
@@ -200,6 +209,151 @@ class LinkedInScraper(JobSiteScraper):
         except Exception as e:
             logger.error(f"Error parsing LinkedIn job card: {e}")
             return None
+    
+    def _enrich_job_details(self, job: Job):
+        """Fetch job detail page and extract requirements, keywords, certifications"""
+        try:
+            soup = self._get_page(job.url)
+            if not soup:
+                return
+            
+            # Get full job description
+            desc_elem = soup.find('div', class_=re.compile(r'show-more-less-html__markup|description__text'))
+            if not desc_elem:
+                desc_elem = soup.find('section', class_=re.compile(r'description'))
+            
+            description = desc_elem.get_text(strip=True) if desc_elem else ""
+            job.description = description[:5000]  # Limit size
+            
+            # Extract structured info
+            job.requirements = self._extract_requirements(description)
+            job.key_skills = self._extract_key_skills(description)
+            job.certifications = self._extract_certifications(description)
+            job.experience_level = self._extract_experience_level(description)
+            job.job_type = self._extract_job_type(description)
+            job.hiring_info = self._extract_hiring_info(soup, description)
+            
+        except Exception as e:
+            logger.error(f"Error enriching job {job.url}: {e}")
+    
+    def _extract_requirements(self, text: str) -> List[str]:
+        """Extract requirements from job description"""
+        requirements = []
+        text_lower = text.lower()
+        
+        # Common requirement patterns
+        req_patterns = [
+            r'(?:requirements?|qualifications?|what you.ll need|what we.re looking for)[:\s]*(.*?)(?:\n\n|\n[A-Z]|benefits?|we offer|$)',
+            r'(?:must have|required|mandatory)[:\s]*([^.]+\.)',
+        ]
+        
+        for pattern in req_patterns:
+            matches = re.findall(pattern, text, re.IGNORECASE | re.DOTALL)
+            for match in matches:
+                # Split into bullet points
+                items = re.split(r'[•\-\*\n]+', match)
+                for item in items:
+                    item = item.strip()
+                    if len(item) > 20 and len(item) < 300:
+                        requirements.append(item)
+        
+        return list(dict.fromkeys(requirements))[:10]  # Deduplicate, max 10
+    
+    def _extract_key_skills(self, text: str) -> List[str]:
+        """Extract key technical skills mentioned"""
+        skills = []
+        text_lower = text.lower()
+        
+        # Common tech skills to look for
+        tech_skills = [
+            'python', 'javascript', 'typescript', 'java', 'c#', 'c++', 'go', 'rust', 'php', 'ruby',
+            'react', 'vue', 'angular', 'next.js', 'nuxt', 'svelte',
+            'node.js', 'express', 'django', 'flask', 'fastapi', 'spring', '.net',
+            'aws', 'azure', 'gcp', 'docker', 'kubernetes', 'terraform',
+            'postgresql', 'mysql', 'mongodb', 'redis', 'elasticsearch',
+            'git', 'ci/cd', 'jenkins', 'github actions', 'gitlab',
+            'rest api', 'graphql', 'grpc', 'microservices',
+            'machine learning', 'ai', 'data science', 'pandas', 'numpy', 'tensorflow', 'pytorch',
+        ]
+        
+        for skill in tech_skills:
+            if skill in text_lower:
+                skills.append(skill.title())
+        
+        return list(dict.fromkeys(skills))[:15]
+    
+    def _extract_certifications(self, text: str) -> List[str]:
+        """Extract certification requirements"""
+        certs = []
+        text_lower = text.lower()
+        
+        cert_keywords = [
+            'aws certified', 'azure certified', 'google cloud certified',
+            'ckad', 'cka', 'ckad', 'cncf',
+            'pmp', 'scrum master', 'csm', 'psm',
+            'comptia', 'security+', 'network+',
+            'cisco', 'ccna', 'ccnp', 'ccie',
+            'oracle certified', 'microsoft certified',
+            'itil', 'cobit', 'iso 27001',
+            'certified', 'certification'
+        ]
+        
+        for cert in cert_keywords:
+            if cert in text_lower:
+                # Find the context around it
+                pattern = rf'.{{0,50}}{re.escape(cert)}.{{0,50}}'
+                matches = re.findall(pattern, text, re.IGNORECASE)
+                for match in matches:
+                    certs.append(match.strip())
+        
+        return list(dict.fromkeys(certs))[:5]
+    
+    def _extract_experience_level(self, text: str) -> str:
+        """Extract experience level"""
+        text_lower = text.lower()
+        
+        if any(kw in text_lower for kw in ['entry level', 'entry-level', 'junior', 'graduate', 'intern', 'trainee', '0-1 year', '0-2 years']):
+            return "Entry/Junior"
+        elif any(kw in text_lower for kw in ['senior', 'lead', 'principal', 'staff', '5+ years', '7+ years', '10+ years']):
+            return "Senior"
+        elif any(kw in text_lower for kw in ['mid', 'intermediate', '2-4 years', '3-5 years', '4-6 years']):
+            return "Mid-level"
+        return "Not specified"
+    
+    def _extract_job_type(self, text: str) -> str:
+        """Extract job type"""
+        text_lower = text.lower()
+        
+        if any(kw in text_lower for kw in ['full.time', 'full-time', 'permanent']):
+            return "Full-time"
+        elif any(kw in text_lower for kw in ['contract', 'contractor', 'freelance']):
+            return "Contract"
+        elif any(kw in text_lower for kw in ['part.time', 'part-time']):
+            return "Part-time"
+        elif any(kw in text_lower for kw in ['intern', 'internship']):
+            return "Internship"
+        return "Not specified"
+    
+    def _extract_hiring_info(self, soup: BeautifulSoup, text: str) -> Dict[str, Any]:
+        """Try to extract hiring team/contact info (limited on LinkedIn)"""
+        info = {
+            'hiring_manager': None,
+            'team_members': [],
+            'company_linkedin': None,
+            'note': 'LinkedIn job postings rarely include direct contact emails. Connect via LinkedIn instead.'
+        }
+        
+        # Try to find company LinkedIn URL
+        company_link = soup.find('a', href=re.compile(r'linkedin\.com/company/'))
+        if company_link:
+            info['company_linkedin'] = company_link.get('href')
+        
+        # Look for "Posted by" or hiring team info
+        posted_by = soup.find(string=re.compile(r'posted by|hiring team|recruiter', re.I))
+        if posted_by:
+            info['hiring_manager'] = posted_by.strip()[:200]
+        
+        return info
 
 
 class IndeedScraper(JobSiteScraper):
@@ -641,6 +795,11 @@ class EmailNotifier:
                 .job-type-onsite {{ display: inline-block; background: #3b82f6; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-right: 10px; }}
                 .job-link {{ display: inline-block; background: #667eea; color: white; padding: 8px 16px; border-radius: 4px; text-decoration: none; margin-top: 10px; }}
                 .job-link:hover {{ background: #5568d3; }}
+                .section {{ margin-top: 15px; padding-top: 10px; border-top: 1px solid #eee; }}
+                .section-title {{ font-weight: bold; color: #667eea; margin-bottom: 8px; font-size: 14px; }}
+                .skill-tag {{ display: inline-block; background: #e8f0fe; color: #1a73e8; padding: 3px 8px; border-radius: 12px; font-size: 11px; margin: 2px 4px 2px 0; }}
+                .requirement {{ background: #fff3e0; padding: 8px 12px; border-radius: 4px; margin: 5px 0; font-size: 13px; border-left: 3px solid #ff9800; }}
+                .cert {{ background: #e8f5e9; padding: 8px 12px; border-radius: 4px; margin: 5px 0; font-size: 13px; border-left: 3px solid #4caf50; }}
                 .footer {{ text-align: center; padding: 20px; color: #888; font-size: 12px; }}
             </style>
         </head>
@@ -656,14 +815,62 @@ class EmailNotifier:
             job_type = getattr(job, 'job_type', 'onsite')
             type_badge = f'<span class="job-type-remote">🌍 Remote</span>' if job_type == "remote" else f'<span class="job-type-onsite">🏢 Abuja</span>'
             
+            # Experience level badge
+            exp_level = getattr(job, 'experience_level', 'Not specified')
+            exp_badge = f'<span class="job-type-onsite">{exp_level}</span>'
+            
             html += f"""
                 <div class="job">
                     <div class="job-title">{job.title}</div>
                     <div class="job-company">[COMPANY] {job.company}</div>
                     <div class="job-location">[LOCATION] {job.location}</div>
-                    {type_badge}
+                    {type_badge} {exp_badge}
                     <span class="job-source">{job.source}</span>
                     <a href="{job.url}" class="job-link" target="_blank">View Job →</a>
+            """
+            
+            # Key Skills
+            key_skills = getattr(job, 'key_skills', None)
+            if key_skills:
+                html += f"""
+                    <div class="section">
+                        <div class="section-title">🔑 Key Skills:</div>
+                        {''.join(f'<span class="skill-tag">{skill}</span>' for skill in key_skills[:12])}
+                    </div>
+                """
+            
+            # Requirements
+            requirements = getattr(job, 'requirements', None)
+            if requirements:
+                html += f"""
+                    <div class="section">
+                        <div class="section-title">📋 Requirements:</div>
+                        {''.join(f'<div class="requirement">• {req}</div>' for req in requirements[:8])}
+                    </div>
+                """
+            
+            # Certifications
+            certifications = getattr(job, 'certifications', None)
+            if certifications:
+                html += f"""
+                    <div class="section">
+                        <div class="section-title">📜 Certifications Mentioned:</div>
+                        {''.join(f'<div class="cert">• {cert}</div>' for cert in certifications[:5])}
+                    </div>
+                """
+            
+            # Hiring info
+            hiring_info = getattr(job, 'hiring_info', None)
+            if hiring_info and hiring_info.get('company_linkedin'):
+                html += f"""
+                    <div class="section">
+                        <div class="section-title">👥 Hiring Info:</div>
+                        <div>Company LinkedIn: <a href="{hiring_info['company_linkedin']}" target="_blank">View Company</a></div>
+                        <div style="color: #888; font-size: 12px; margin-top: 5px;">{hiring_info.get('note', '')}</div>
+                    </div>
+                """
+            
+            html += """
                 </div>
             """
         
@@ -690,12 +897,34 @@ class EmailNotifier:
         for i, job in enumerate(jobs, 1):
             job_type = getattr(job, 'job_type', 'onsite')
             type_str = "🌍 Remote" if job_type == "remote" else "🏢 Abuja"
+            exp_level = getattr(job, 'experience_level', 'Not specified')
+            
             text += f"{i}. {job.title}\n"
             text += f"   Company: {job.company}\n"
             text += f"   Location: {job.location}\n"
-            text += f"   Type: {type_str}\n"
+            text += f"   Type: {type_str} | Experience: {exp_level}\n"
             text += f"   Source: {job.source}\n"
-            text += f"   Link: {job.url}\n\n"
+            text += f"   Link: {job.url}\n"
+            
+            key_skills = getattr(job, 'key_skills', None)
+            if key_skills:
+                text += f"   Key Skills: {', '.join(key_skills[:10])}\n"
+            
+            requirements = getattr(job, 'requirements', None)
+            if requirements:
+                text += f"   Requirements:\n"
+                for req in requirements[:5]:
+                    text += f"     • {req}\n"
+            
+            certifications = getattr(job, 'certifications', None)
+            if certifications:
+                text += f"   Certifications: {', '.join(certifications[:3])}\n"
+            
+            hiring_info = getattr(job, 'hiring_info', None)
+            if hiring_info and hiring_info.get('company_linkedin'):
+                text += f"   Company LinkedIn: {hiring_info['company_linkedin']}\n"
+            
+            text += "\n"
         
         text += "=" * 60 + "\n"
         text += f"Job Monitor Bot | {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"

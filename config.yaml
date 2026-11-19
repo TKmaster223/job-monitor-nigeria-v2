@@ -57,10 +57,10 @@ job_search:
     - "head of"
 
 # Job Sites to Monitor (enabled/disabled)
-# Recommended: LinkedIn + MyJobMag (best for Nigerian tech jobs)
+# LinkedIn only for now (best for tech roles, has remote filter)
 job_sites:
   linkedin: true
-  myjobmag: true
+  myjobmag: false
   jobberman: false
   indeed: false
   ngcareers: false
