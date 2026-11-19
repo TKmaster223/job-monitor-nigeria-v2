@@ -3,7 +3,7 @@ name: Job Monitor
 on:
   schedule:
     # Run at minutes 5 and 35 past every hour (avoids :00/:30 congestion)
-    - cron: '* * * * *'
+    - cron: '5,35 * * * *'
   workflow_dispatch:  # Allow manual trigger
 
 concurrency: 
