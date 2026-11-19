@@ -3,10 +3,10 @@ name: Job Monitor
 on:
   schedule:
     # Run at minutes 5 and 35 past every hour (avoids :00/:30 congestion)
-    - cron: '5,35 * * * *'
+    - cron: '* * * * *'
   workflow_dispatch:  # Allow manual trigger
 
-concurrency:
+concurrency: 
   group: job-monitor
   cancel-in-progress: true
 
