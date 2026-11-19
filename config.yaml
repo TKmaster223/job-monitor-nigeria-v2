@@ -59,11 +59,11 @@ job_sites:
 
 # Monitoring Settings
 monitoring:
-  check_interval_minutes: 30
+  check_interval_minutes: 120
   max_jobs_per_site: 20
-  days_back: 7  # Only show jobs posted within this many days
+  days_back: 3  # Only show jobs posted within this many days (1 sec to 3 days)
 
 # GitHub Actions Settings
 github_actions:
   enabled: true
-  schedule: "*/30 * * * *"  # Every 30 minutes (cron expression)
+  schedule: "0 */2 * * *"  # Every 2 hours at minute 0 (cron expression)
