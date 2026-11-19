@@ -147,16 +147,16 @@ exclude_keywords:
 
 ### Job Sites
 
-Enable/disable specific sites:
+Enable/disable specific sites (currently **LinkedIn only** — others disabled due to blocking/poor results):
 
 ```yaml
 job_sites:
   linkedin: true
-  indeed: true
-  jobberman: true
-  myjobmag: true
-  ngcareers: true
-  hotnigerianjobs: true
+  myjobmag: false
+  jobberman: false
+  indeed: false
+  ngcareers: false
+  hotnigerianjobs: false
 ```
 
 ## How It Works
