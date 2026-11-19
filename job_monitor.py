@@ -750,16 +750,24 @@ class EmailNotifier:
         try:
             # Create message
             msg = MIMEMultipart('alternative')
-            msg['Subject'] = f"[JOB ALERT] {len(jobs)} New Jobs ({onsite_count} Abuja, {remote_count} Remote) - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-            msg['From'] = self.config['sender_email']
+            # Less spammy subject line
+            msg['Subject'] = f"Job Alert: {len(jobs)} new opportunities ({onsite_count} Abuja, {remote_count} Remote)"
+            # Professional From name
+            msg['From'] = f"Job Monitor <{self.config['sender_email']}>"
             msg['To'] = self.config['recipient_email']
+            # Anti-spam headers
+            msg['List-Unsubscribe'] = f'<mailto:{self.config["sender_email"]}?subject=unsubscribe>'
+            msg['Auto-Submitted'] = 'auto-generated'
+            msg['Precedence'] = 'bulk'
+            msg['X-Priority'] = '3'
+            msg['X-MSMail-Priority'] = 'Normal'
             
             # Create HTML content
             html = self._create_html_email(jobs)
             text = self._create_text_email(jobs)
             
-            msg.attach(MIMEText(text, 'plain'))
-            msg.attach(MIMEText(html, 'html'))
+            msg.attach(MIMEText(text, 'plain', 'utf-8'))
+            msg.attach(MIMEText(html, 'html', 'utf-8'))
             
             # Send email
             with smtplib.SMTP(self.config['smtp_server'], self.config['smtp_port']) as server:
