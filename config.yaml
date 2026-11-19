@@ -68,7 +68,7 @@ job_sites:
 
 # Monitoring Settings
 monitoring:
-  check_interval_minutes: 120
+  check_interval_minutes: 30
   max_jobs_per_site: 20
   days_back: 3  # Only show jobs posted within this many days (1 sec to 3 days)
 
