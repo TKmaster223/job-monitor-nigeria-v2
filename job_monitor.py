@@ -107,14 +107,42 @@ class LinkedInScraper(JobSiteScraper):
         jobs = []
         keywords = self.config['job_search']['keywords']
         location = self.config['job_search']['location']
+        remote_keywords = self.config['job_search'].get('remote_keywords', [])
+        
+        # Search locations: Abuja + Remote
+        search_locations = [location, "Remote"]
         
         # LinkedIn uses a specific URL structure for job search
         # We'll use the guest search API approach
         for keyword in keywords[:5]:  # Limit to first 5 keywords to avoid rate limiting
+            for loc in search_locations:
+                try:
+                    url = f"https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
+                    params = {
+                        'keywords': keyword,
+                        'location': loc,
+                        'start': 0,
+                    }
+                    
+                    soup = self._get_page_with_params(url, params)
+                    if not soup:
+                        continue
+                    
+                    job_cards = soup.find_all('li')
+                    for card in job_cards[:self.config['monitoring']['max_jobs_per_site']]:
+                        job = self._parse_job_card(card)
+                        if job:
+                            jobs.append(job)
+                            
+                except Exception as e:
+                    logger.error(f"Error scraping LinkedIn for '{keyword}' in '{loc}': {e}")
+        
+        # Also search with remote-specific keywords in Abuja
+        for remote_kw in remote_keywords[:3]:
             try:
                 url = f"https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
                 params = {
-                    'keywords': keyword,
+                    'keywords': f"{remote_kw} developer",
                     'location': location,
                     'start': 0,
                 }
@@ -130,7 +158,7 @@ class LinkedInScraper(JobSiteScraper):
                         jobs.append(job)
                         
             except Exception as e:
-                logger.error(f"Error scraping LinkedIn for '{keyword}': {e}")
+                logger.error(f"Error scraping LinkedIn for remote kw '{remote_kw}': {e}")
         
         return jobs
     
@@ -322,12 +350,39 @@ class MyJobMagScraper(JobSiteScraper):
     def scrape(self) -> List[Job]:
         jobs = []
         keywords = self.config['job_search']['keywords']
+        remote_keywords = self.config['job_search'].get('remote_keywords', [])
+        
+        # Search locations: Abuja + Remote
+        search_locations = ['abuja', 'remote']
         
         for keyword in keywords[:5]:
+            for loc in search_locations:
+                try:
+                    url = "https://www.myjobmag.com/search/jobs"
+                    params = {
+                        'q': keyword,
+                        'location': loc,
+                    }
+                    
+                    soup = self._get_page_with_params(url, params)
+                    if not soup:
+                        continue
+                    
+                    job_cards = soup.find_all('li', class_=re.compile(r'job-list'))
+                    for card in job_cards[:self.config['monitoring']['max_jobs_per_site']]:
+                        job = self._parse_job_card(card)
+                        if job:
+                            jobs.append(job)
+                            
+                except Exception as e:
+                    logger.error(f"Error scraping MyJobMag for '{keyword}' in '{loc}': {e}")
+        
+        # Also search with remote-specific keywords
+        for remote_kw in remote_keywords[:3]:
             try:
                 url = "https://www.myjobmag.com/search/jobs"
                 params = {
-                    'q': keyword,
+                    'q': f"{remote_kw} developer",
                     'location': 'abuja',
                 }
                 
@@ -342,7 +397,7 @@ class MyJobMagScraper(JobSiteScraper):
                         jobs.append(job)
                         
             except Exception as e:
-                logger.error(f"Error scraping MyJobMag for '{keyword}': {e}")
+                logger.error(f"Error scraping MyJobMag for remote kw '{remote_kw}': {e}")
         
         return jobs
     
@@ -535,10 +590,13 @@ class EmailNotifier:
             logger.info("No new jobs to notify about")
             return True
         
+        remote_count = sum(1 for j in jobs if getattr(j, 'job_type', '') == "remote")
+        onsite_count = len(jobs) - remote_count
+        
         try:
             # Create message
             msg = MIMEMultipart('alternative')
-            msg['Subject'] = f"[JOB ALERT] {len(jobs)} New Job Opportunities in Abuja - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+            msg['Subject'] = f"[JOB ALERT] {len(jobs)} New Jobs ({onsite_count} Abuja, {remote_count} Remote) - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
             msg['From'] = self.config['sender_email']
             msg['To'] = self.config['recipient_email']
             
@@ -564,6 +622,9 @@ class EmailNotifier:
     
     def _create_html_email(self, jobs: List[Job]) -> str:
         """Create HTML email content"""
+        remote_count = sum(1 for j in jobs if getattr(j, 'job_type', '') == "remote")
+        onsite_count = len(jobs) - remote_count
+        
         html = f"""
         <html>
         <head>
@@ -576,6 +637,8 @@ class EmailNotifier:
                 .job-company {{ color: #555; font-size: 16px; margin-bottom: 5px; }}
                 .job-location {{ color: #888; font-size: 14px; margin-bottom: 10px; }}
                 .job-source {{ display: inline-block; background: #e0e0e0; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-right: 10px; }}
+                .job-type-remote {{ display: inline-block; background: #10b981; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-right: 10px; }}
+                .job-type-onsite {{ display: inline-block; background: #3b82f6; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-right: 10px; }}
                 .job-link {{ display: inline-block; background: #667eea; color: white; padding: 8px 16px; border-radius: 4px; text-decoration: none; margin-top: 10px; }}
                 .job-link:hover {{ background: #5568d3; }}
                 .footer {{ text-align: center; padding: 20px; color: #888; font-size: 12px; }}
@@ -584,17 +647,21 @@ class EmailNotifier:
         <body>
             <div class="header">
                 <h1>[JOB ALERT] New Job Opportunities Found!</h1>
-                <p>Found {len(jobs)} new developer/internship roles in Abuja, Nigeria</p>
+                <p>Found {len(jobs)} new developer/internship roles ({onsite_count} Abuja, {remote_count} Remote)</p>
             </div>
             <div class="content">
         """
         
         for job in jobs:
+            job_type = getattr(job, 'job_type', 'onsite')
+            type_badge = f'<span class="job-type-remote">🌍 Remote</span>' if job_type == "remote" else f'<span class="job-type-onsite">🏢 Abuja</span>'
+            
             html += f"""
                 <div class="job">
                     <div class="job-title">{job.title}</div>
                     <div class="job-company">[COMPANY] {job.company}</div>
                     <div class="job-location">[LOCATION] {job.location}</div>
+                    {type_badge}
                     <span class="job-source">{job.source}</span>
                     <a href="{job.url}" class="job-link" target="_blank">View Job →</a>
                 </div>
@@ -613,14 +680,20 @@ class EmailNotifier:
     
     def _create_text_email(self, jobs: List[Job]) -> str:
         """Create plain text email content"""
+        remote_count = sum(1 for j in jobs if getattr(j, 'job_type', '') == "remote")
+        onsite_count = len(jobs) - remote_count
+        
         text = f"New Job Opportunities Found!\n"
-        text += f"Found {len(jobs)} new developer/internship roles in Abuja, Nigeria\n\n"
+        text += f"Found {len(jobs)} new developer/internship roles ({onsite_count} Abuja, {remote_count} Remote)\n\n"
         text += "=" * 60 + "\n\n"
         
         for i, job in enumerate(jobs, 1):
+            job_type = getattr(job, 'job_type', 'onsite')
+            type_str = "🌍 Remote" if job_type == "remote" else "🏢 Abuja"
             text += f"{i}. {job.title}\n"
             text += f"   Company: {job.company}\n"
             text += f"   Location: {job.location}\n"
+            text += f"   Type: {type_str}\n"
             text += f"   Source: {job.source}\n"
             text += f"   Link: {job.url}\n\n"
         
@@ -715,6 +788,15 @@ class JobMonitor:
         job_id = f"{job.source}:{job.url}"
         self.seen_jobs.add(job_id)
     
+    def _is_remote_job(self, job: Job) -> bool:
+        """Check if job is remote based on location or keywords"""
+        remote_keywords = self.config['job_search'].get('remote_keywords', [])
+        text = f"{job.title} {job.location} {job.description or ''}".lower()
+        for kw in remote_keywords:
+            if kw.lower() in text:
+                return True
+        return False
+    
     def run_once(self) -> List[Job]:
         """Run one monitoring cycle"""
         logger.info("Starting job monitoring cycle...")
@@ -722,6 +804,7 @@ class JobMonitor:
         all_new_jobs = []
         keywords = self.config['job_search']['keywords']
         exclude_keywords = self.config['job_search']['exclude_keywords']
+        remote_keywords = self.config['job_search'].get('remote_keywords', [])
         
         for site_name, scraper in self.scrapers.items():
             logger.info(f"Scraping {site_name}...")
@@ -731,11 +814,22 @@ class JobMonitor:
                 
                 # Filter jobs
                 for job in jobs:
-                    if job.matches_keywords(keywords, exclude_keywords):
+                    # Check if job matches main keywords
+                    matches_main = job.matches_keywords(keywords, exclude_keywords)
+                    
+                    # Also check if it's a remote job (even if not in Abuja)
+                    is_remote = self._is_remote_job(job)
+                    matches_remote = is_remote and job.matches_keywords(keywords + remote_keywords, exclude_keywords)
+                    
+                    if matches_main or matches_remote:
+                        # Set job type
+                        job.job_type = "remote" if is_remote else "onsite"
+                        
                         if self._is_new_job(job):
                             all_new_jobs.append(job)
                             self._mark_job_seen(job)
-                            logger.info(f"New job found: {job.title} at {job.company} ({job.source})")
+                            job_type_str = "🌍 Remote" if is_remote else "🏢 Onsite"
+                            logger.info(f"New job found: {job.title} at {job.company} ({job.source}) [{job_type_str}]")
                         else:
                             logger.debug(f"Already seen: {job.title}")
                     else:
@@ -749,7 +843,9 @@ class JobMonitor:
         
         # Send notifications
         if all_new_jobs:
-            logger.info(f"Sending notifications for {len(all_new_jobs)} new jobs")
+            remote_count = sum(1 for j in all_new_jobs if j.job_type == "remote")
+            onsite_count = len(all_new_jobs) - remote_count
+            logger.info(f"Sending notifications for {len(all_new_jobs)} new jobs ({onsite_count} Abuja, {remote_count} Remote)")
             self.notifier.send_jobs(all_new_jobs)
         else:
             logger.info("No new matching jobs found")
