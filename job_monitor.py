@@ -1121,7 +1121,7 @@ def health():
     return "OK", 200
 
 
-def run_forever():
+def run_forever(monitor):
     """Run monitoring loop continuously"""
     logger.info("Starting continuous monitoring (every 30 minutes)...")
 
@@ -1172,7 +1172,7 @@ def main():
         logger.info(f"Health endpoint on port {port}")
 
         # Run monitoring loop
-        run_forever()
+        run_forever(monitor)
     elif args.once:
         monitor.run_once()
     else:
