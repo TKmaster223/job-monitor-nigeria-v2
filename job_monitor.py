@@ -11,6 +11,7 @@ import json
 import time
 import smtplib
 import logging
+import threading
 from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -21,7 +22,9 @@ from urllib.parse import urljoin, quote_plus
 import requests
 from bs4 import BeautifulSoup
 import yaml
+import schedule
 from dotenv import load_dotenv
+from flask import Flask
 
 # Load environment variables
 load_dotenv()
@@ -1090,18 +1093,42 @@ class JobMonitor:
         return all_new_jobs
 
 
+app = Flask(__name__)
+
+
+@app.route("/health")
+def health():
+    return "OK", 200
+
+
+def run_forever():
+    """Run monitoring loop continuously"""
+    logger.info("Starting continuous monitoring (every 30 minutes)...")
+
+    # Run immediately on start
+    monitor.run_once()
+
+    # Schedule every 30 minutes
+    schedule.every(30).minutes.do(monitor.run_once)
+
+    while True:
+        schedule.run_pending()
+        time.sleep(60)
+
+
 def main():
     """Main entry point"""
     import argparse
-    
+
     parser = argparse.ArgumentParser(description='Job Monitor for Nigerian Job Sites')
     parser.add_argument('--config', default='config.yaml', help='Config file path')
     parser.add_argument('--once', action='store_true', help='Run once and exit')
     parser.add_argument('--test-email', action='store_true', help='Send test email')
+    parser.add_argument('--web', action='store_true', help='Run as web service (Render)')
     args = parser.parse_args()
-    
+
     monitor = JobMonitor(args.config)
-    
+
     if args.test_email:
         # Send test email
         test_job = Job(
@@ -1113,8 +1140,20 @@ def main():
         )
         monitor.notifier.send_jobs([test_job])
         return
-    
-    if args.once:
+
+    if args.web:
+        # Start Flask health server in background
+        port = int(os.getenv('PORT', '10000'))
+        flask_thread = threading.Thread(
+            target=lambda: app.run(host='0.0.0.0', port=port),
+            daemon=True
+        )
+        flask_thread.start()
+        logger.info(f"Health endpoint on port {port}")
+
+        # Run monitoring loop
+        run_forever()
+    elif args.once:
         monitor.run_once()
     else:
         # Run continuously (for local testing)
