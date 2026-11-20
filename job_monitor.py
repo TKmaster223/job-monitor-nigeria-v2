@@ -9,6 +9,7 @@ import os
 import re
 import json
 import time
+import random
 import smtplib
 import logging
 import threading
@@ -135,6 +136,10 @@ class LinkedInScraper(JobSiteScraper):
                     
                     soup = self._get_page_with_params(url, params)
                     if not soup:
+                        # Rate limited - wait longer before next request
+                        wait_time = random.randint(60, 120)
+                        logger.warning(f"Rate limited on LinkedIn. Waiting {wait_time}s...")
+                        time.sleep(wait_time)
                         continue
                     
                     job_cards = soup.find_all('li')
@@ -145,12 +150,22 @@ class LinkedInScraper(JobSiteScraper):
                             self._enrich_job_details(job)
                             jobs.append(job)
                             
+                    # Delay between requests to avoid 429
+                    delay = random.uniform(8, 15)
+                    logger.debug(f"Waiting {delay:.1f}s before next LinkedIn request...")
+                    time.sleep(delay)
+                        
                 except Exception as e:
                     logger.error(f"Error scraping LinkedIn for '{keyword}' in '{loc}': {e}")
+                    time.sleep(30)
+                    continue
         
         # Also search with remote-specific keywords in Abuja
         for remote_kw in remote_keywords[:3]:
             try:
+                # Extra delay before remote keyword searches
+                time.sleep(random.uniform(10, 20))
+                
                 url = f"https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
                 params = {
                     'keywords': f"{remote_kw} developer",
@@ -160,6 +175,9 @@ class LinkedInScraper(JobSiteScraper):
                 
                 soup = self._get_page_with_params(url, params)
                 if not soup:
+                    wait_time = random.randint(60, 120)
+                    logger.warning(f"Rate limited on LinkedIn. Waiting {wait_time}s...")
+                    time.sleep(wait_time)
                     continue
                 
                 job_cards = soup.find_all('li')
@@ -171,6 +189,8 @@ class LinkedInScraper(JobSiteScraper):
                         
             except Exception as e:
                 logger.error(f"Error scraping LinkedIn for remote kw '{remote_kw}': {e}")
+                time.sleep(30)
+                continue
         
         return jobs
     
